@@ -1095,6 +1095,10 @@ namespace ImGui
     IMGUI_API ImGuiViewport* FindViewportByID(ImGuiID id);                          // this is a helper for backends.
     IMGUI_API ImGuiViewport* FindViewportByPlatformHandle(void* platform_handle);   // this is a helper for backends. the type platform_handle is decided by the backend (e.g. HWND, MyWindow*, GLFWwindow* etc.)
 
+    // Custom ImGui
+    IMGUI_API void SimpleSliderFloat(const char* label, float* beginning, float* end, float grab_sz);
+    IMGUI_API void PianoRoll(const char* string_id, ImVec2 size);
+
 } // namespace ImGui
 
 //-----------------------------------------------------------------------------

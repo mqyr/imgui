@@ -47,6 +47,9 @@ Index of this file:
 // System includes
 #include <stdint.h>     // intptr_t
 
+// Custom
+#include <vector>
+
 //-------------------------------------------------------------------------
 // Warnings
 //-------------------------------------------------------------------------
@@ -10575,3 +10578,179 @@ void ImGui::TabItemLabelAndCloseButton(ImDrawList* draw_list, const ImRect& bb, 
 
 
 #endif // #ifndef IMGUI_DISABLE
+
+// Note: p_data, p_min and p_max are _pointers_ to a memory address holding the data. For a slider, they are all required.
+// Read code of e.g. SliderFloat(), SliderInt() etc. or examples in 'Demo->Widgets->Data Types' to understand how to use this function directly.
+void ImGui::SimpleSliderFloat(const char* label, float* beginning, float* end, float grab_sz)
+{
+    float min = 0.0f;
+    float max = 1.0f;
+    ImGuiWindow* window = GetCurrentWindow();
+    if (window->SkipItems)
+        return;
+
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const ImGuiID id = window->GetID(label);
+    const float w = CalcItemWidth();
+
+    const ImVec2 label_size = CalcTextSize(label, NULL, true);
+    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 4.0f));
+    const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
+
+    const bool temp_input_allowed = (ImGuiSliderFlags_NoInput) == 0;
+    ItemSize(total_bb, style.FramePadding.y);
+    if (!ItemAdd(total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0))
+        return;
+
+
+
+
+
+    // Slider behavior
+    ImRect grab_bb;
+
+
+    const ImGuiAxis axis = ImGuiAxis_X;
+
+    // Calculate bounds
+    const float slider_sz = frame_bb.Max.x - frame_bb.Min.x;
+    const float slider_usable_sz = slider_sz - grab_sz;
+    const float slider_usable_pos_min = frame_bb.Min[axis] + grab_sz * 0.5f;
+    const float slider_usable_pos_max = frame_bb.Max[axis] - grab_sz * 0.5f;
+
+    // Process interacting with the slider
+    bool value_changed = false;
+    if (g.ActiveId == id)
+    {
+        bool set_new_value = false;
+        float clicked_t = 0.0f;
+        if (g.ActiveIdSource == ImGuiInputSource_Mouse)
+        {
+            if (!g.IO.MouseDown[0])
+            {
+                ClearActiveID();
+            }
+            else
+            {
+                const float mouse_abs_pos = g.IO.MousePos[axis];
+                if (g.ActiveIdIsJustActivated)
+                {
+                    float grab_t = ScaleRatioFromValueT<float, float, float>(ImGuiDataType_Float, *beginning, 0.0f, 1.0f, false, false, false);
+                    if (axis == ImGuiAxis_Y)
+                        grab_t = 1.0f - grab_t;
+                    const float grab_pos = ImLerp(slider_usable_pos_min, slider_usable_pos_max, grab_t);
+                    const bool clicked_around_grab = (mouse_abs_pos >= grab_pos - grab_sz * 0.5f - 1.0f) && (mouse_abs_pos <= grab_pos + grab_sz * 0.5f + 1.0f); // No harm being extra generous here.
+                    g.SliderGrabClickOffset = (clicked_around_grab) ? mouse_abs_pos - grab_pos : 0.0f;
+                }
+                if (slider_usable_sz > 0.0f)
+                    clicked_t = ImSaturate((mouse_abs_pos - g.SliderGrabClickOffset - slider_usable_pos_min) / slider_usable_sz);
+                if (axis == ImGuiAxis_Y)
+                    clicked_t = 1.0f - clicked_t;
+                set_new_value = true;
+            }
+        }
+
+        if (set_new_value)
+        {
+            float v_new = ScaleValueFromRatioT<float, float, float>(ImGuiDataType_Float, clicked_t, 0, 1, false, false, false);
+
+            // Apply result
+            if (*beginning != v_new)
+            {
+                *beginning = v_new;
+                value_changed = true;
+            }
+        }
+    }
+
+    if (slider_sz < 1.0f)
+    {
+        grab_bb = ImRect(frame_bb.Min, frame_bb.Min);
+    }
+    else
+    {
+        // Output grab position so it can be displayed by the caller
+        float grab_t = ScaleRatioFromValueT<float, float, float>(ImGuiDataType_Float, *beginning, 0.0f, 1.0f, false, false, false);
+        if (axis == ImGuiAxis_Y)
+            grab_t = 1.0f - grab_t;
+        const float grab_pos = ImLerp(slider_usable_pos_min, slider_usable_pos_max, grab_t);
+        if (axis == ImGuiAxis_X)
+            grab_bb = ImRect(grab_pos - grab_sz * 0.5f, frame_bb.Min.y, grab_pos + grab_sz * 0.5f, frame_bb.Max.y);
+        else
+            grab_bb = ImRect(frame_bb.Min.x, grab_pos - grab_sz * 0.5f, frame_bb.Max.x, grab_pos + grab_sz * 0.5f);
+    }
+
+    //const bool value_changed = SliderBehavior(frame_bb, id, ImGuiDataType_Float, p_data, &min, &max, format, 0, &grab_bb);
+        // Default format string when passing NULL
+    const char* format = DataTypeGetInfo(ImGuiDataType_Float)->PrintFmt;
+
+    const bool hovered = ItemHoverable(grab_bb, id, g.LastItemData.ItemFlags);
+    bool temp_input_is_active = temp_input_allowed && TempInputIsActive(id);
+
+    if (!temp_input_is_active)
+    {
+        const bool clicked = hovered && IsMouseClicked(0, ImGuiInputFlags_None, id);
+        const bool make_active = (clicked || g.NavActivateId == id);
+
+        if (make_active && !temp_input_is_active)
+        {
+            SetActiveID(id, window);
+            SetFocusID(id, window);
+            FocusWindow(window);
+        }
+    }
+    // Draw frame
+    const ImU32 frame_col = GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+    RenderNavCursor(frame_bb, id);
+    RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding);
+
+    if (value_changed)
+        MarkItemEdited(id);
+
+    // Render grab
+    if (grab_bb.Max.x > grab_bb.Min.x)
+        window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
+
+    IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags | (temp_input_allowed ? ImGuiItemStatusFlags_Inputable : 0));
+    return;
+}
+
+void ImGui::PianoRoll(const char* string_id, ImVec2 note_scale) {
+    struct ImNote {
+        size_t note_y;
+        float offset;
+        float duration;
+    };
+    std::vector<ImNote> notes{ {1, 0.5f, 2.0f} };
+
+
+
+    ImGuiWindow* window = GetCurrentWindow();
+    if (window->SkipItems)
+        return;
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const ImGuiID id = window->GetID(string_id);
+
+    const ImVec2 origin_pos = window->DC.CursorPos;
+    const float square_sz = GetFrameHeight();
+    //const ImRect total_bb(pos, pos + ImVec2(square_sz + (size.x > 0.0f ? style.ItemInnerSpacing.x + size.x : 0.0f), size.y + style.FramePadding.y * 2.0f));
+    const ImRect total_bb(origin_pos, origin_pos + (note_scale * ImVec2(16, 12)));
+
+    ItemSize(total_bb, style.FramePadding.y);
+
+    RenderFrame(total_bb.Min, total_bb.Max, ImGuiCol_FrameBg, true, style.FrameRounding);
+    ImVec2 pad(ImMax(1.0f, IM_TRUNC(square_sz / 3.6f)), ImMax(1.0f, IM_TRUNC(square_sz / 3.6f)));
+    ImU32 background_col = GetColorU32(ImGuiCol_MenuBarBg);
+    window->DrawList->AddRectFilled(total_bb.Min, total_bb.Max, background_col, style.FrameRounding);
+
+    for (auto& note : notes) {
+        ImVec2 pos = origin_pos + ImVec2(note.offset * note_scale.x, note.note_y * note_scale.y);
+        const ImRect bb(pos, pos + ImVec2(note.duration * note_scale.x, note_scale.y));
+        bool hovered, held;
+        bool pressed = ButtonBehavior(bb, id, &hovered, &held);
+        ImU32 col = GetColorU32((hovered && held) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+        window->DrawList->AddRectFilled(bb.Min, bb.Max, col);
+    }
+}
